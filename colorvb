@@ -3,58 +3,85 @@ Sub FormatSheet()
     Set ws = ActiveSheet
     
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
     
     Dim i As Long
     i = 1
     
     Do While i <= lastRow
-        If Trim(ws.Cells(i, 1).Value) Like "GM*" Then
-            ' Start of a new table
-            Call ColorHeader(ws, i)         ' Row 1 - docId
-            Call AddBorders(ws, i)
+        If Left(Trim(ws.Cells(i, 1).Value), 2) = "GM" Then
+            Dim startRow As Long: startRow = i
+            Dim endRow As Long: endRow = FindNextEmptyRow(ws, startRow)
+            Dim lastCol As Long: lastCol = GetLastUsedColumn(ws, startRow, endRow - 1)
             
-            If i + 1 <= lastRow Then
-                Call ColorHeader(ws, i + 1) ' Row 2
-                Call AddBorders(ws, i + 1)
+            ' Row 1 - docId
+            Call ColorHeader(ws, startRow, lastCol)
+            Call AddBorders(ws, startRow, lastCol)
+            
+            ' Row 2 - lineNo
+            If startRow + 1 < endRow Then
+                Call ColorHeader(ws, startRow + 1, lastCol)
+                Call AddBorders(ws, startRow + 1, lastCol)
             End If
             
-            If i + 2 <= lastRow Then
-                Call ColorHeader(ws, i + 2) ' Row 3
-                Call AddBorders(ws, i + 2)
+            ' Row 3 - First Data row
+            If startRow + 2 < endRow Then
+                Call ColorHeader(ws, startRow + 2, lastCol)
+                Call AddBorders(ws, startRow + 2, lastCol)
             End If
             
-            If i + 3 <= lastRow Then
-                Call ColorDataRow(ws, i + 3) ' Row 4
-                Call AddBorders(ws, i + 3)
+            ' Row 4 - Blue row
+            If startRow + 3 < endRow Then
+                Call ColorDataRow(ws, startRow + 3, lastCol)
+                Call AddBorders(ws, startRow + 3, lastCol)
             End If
             
-            ' Remaining rows → default fill, just add borders
+            ' Remaining rows - only border
             Dim j As Long
-            j = i + 4
-            Do While j <= lastRow And Trim(ws.Cells(j, 1).Value) <> ""
-                Call AddBorders(ws, j)
-                j = j + 1
-            Loop
+            For j = startRow + 4 To endRow - 1
+                Call AddBorders(ws, j, lastCol)
+            Next j
             
-            i = j ' Skip to next block
+            i = endRow + 1 ' Skip to next block
         Else
             i = i + 1
         End If
     Loop
 End Sub
 
-Sub ColorHeader(ws As Worksheet, rowNum As Long)
-    ws.Range("A" & rowNum & ":J" & rowNum).Interior.Color = RGB(255, 235, 156) ' Orange Accent 2, Lighter 80%
+' Find the next completely empty row (used to separate blocks)
+Function FindNextEmptyRow(ws As Worksheet, startRow As Long) As Long
+    Dim r As Long
+    r = startRow + 1
+    Do While Application.WorksheetFunction.CountA(ws.Rows(r)) > 0
+        r = r + 1
+    Loop
+    FindNextEmptyRow = r
+End Function
+
+' Find the last column used in a block
+Function GetLastUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As Long
+    Dim maxCol As Long
+    Dim r As Long
+    For r = startRow To endRow
+        If ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column > maxCol Then
+            maxCol = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
+        End If
+    Next r
+    GetLastUsedColumn = maxCol
+End Function
+
+Sub ColorHeader(ws As Worksheet, rowNum As Long, lastCol As Long)
+    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.Color = RGB(255, 235, 156) ' Orange Accent 2, Lighter 80%
 End Sub
 
-Sub ColorDataRow(ws As Worksheet, rowNum As Long)
-    ws.Range("A" & rowNum & ":J" & rowNum).Interior.Color = RGB(221, 235, 247) ' Blue Accent 1, Lighter 60%
+Sub ColorDataRow(ws As Worksheet, rowNum As Long, lastCol As Long)
+    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.Color = RGB(221, 235, 247) ' Blue Accent 1, Lighter 60%
 End Sub
 
-Sub AddBorders(ws As Worksheet, rowNum As Long)
+Sub AddBorders(ws As Worksheet, rowNum As Long, lastCol As Long)
     Dim rng As Range
-    Set rng = ws.Range("A" & rowNum & ":J" & rowNum)
+    Set rng = ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol))
     
     With rng.Borders
         .LineStyle = xlContinuous
