@@ -1,4 +1,4 @@
-Sub MergeHorizontalHeaders()
+Sub MergeHeaderBlocksClean()
     Dim ws As Worksheet: Set ws = ActiveSheet
     Dim i As Long: i = 1
     Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
@@ -13,27 +13,24 @@ Sub MergeHorizontalHeaders()
 
             Dim col As Long: col = 1
             Do While col <= lastCol
-                ' If both row1 and row2 are empty, start merging
+                ' Check if row1 and row2 are empty
                 If IsEmpty(ws.Cells(row1, col)) And IsEmpty(ws.Cells(row2, col)) Then
                     Dim mergeStart As Long: mergeStart = col
                     Dim mergeEnd As Long: mergeEnd = col
 
-                    ' Move to the right until row1 or row2 has value
+                    ' Expand to the right while row1 and row2 stay empty
                     Do While mergeEnd + 1 <= lastCol _
                         And IsEmpty(ws.Cells(row1, mergeEnd + 1)) _
                         And IsEmpty(ws.Cells(row2, mergeEnd + 1))
                         mergeEnd = mergeEnd + 1
                     Loop
 
-                    ' Merge rows 1, 2, 3 across columns mergeStart to mergeEnd
-                    Dim r As Long
-                    For r = row1 To row3
-                        With ws.Range(ws.Cells(r, mergeStart), ws.Cells(r, mergeEnd))
-                            .Merge
-                            .HorizontalAlignment = xlCenter
-                            .VerticalAlignment = xlCenter
-                        End With
-                    Next r
+                    ' Merge 3xN block into one single cell
+                    With ws.Range(ws.Cells(row1, mergeStart), ws.Cells(row3, mergeEnd))
+                        .Merge
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                    End With
 
                     col = mergeEnd + 1
                 Else
