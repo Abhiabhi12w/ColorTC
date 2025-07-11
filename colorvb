@@ -1,82 +1,74 @@
-Sub FormatSheet()
+Sub FormatProperTables()
     Dim ws As Worksheet
     Set ws = ActiveSheet
-    
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    
-    Dim i As Long
-    i = 1
-    
+
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Dim i As Long: i = 1
+
     Do While i <= lastRow
-        If Left(Trim(ws.Cells(i, 1).Value), 2) = "GM" Then
-            Dim startRow As Long: startRow = i
-            Dim endRow As Long: endRow = FindNextEmptyRow(ws, startRow)
-            Dim lastCol As Long: lastCol = GetLastUsedColumn(ws, startRow, endRow - 1)
+        If LCase(Trim(ws.Cells(i, 1).Value)) = "docid" Then
+            Dim docRow As Long: docRow = i
+            Dim gmRow As Long: gmRow = i + 1
+            Dim lineNoRow As Long: lineNoRow = i + 2
             
-            ' Row 1 - docId
-            Call ColorHeader(ws, startRow, lastCol)
-            Call AddBorders(ws, startRow, lastCol)
+            Dim endRow As Long: endRow = FindNextEmptyRow(ws, docRow)
+            Dim lastCol As Long: lastCol = GetLastUsedColumn(ws, docRow, endRow - 1)
             
-            ' Row 2 - lineNo
-            If startRow + 1 < endRow Then
-                Call ColorHeader(ws, startRow + 1, lastCol)
-                Call AddBorders(ws, startRow + 1, lastCol)
+            ' 🟧 docId row
+            Call ColorRow(ws, docRow, lastCol, RGB(255, 235, 156))
+            Call AddBorders(ws, docRow, lastCol)
+
+            ' 🟧 GM* row
+            If gmRow < endRow Then
+                Call ColorRow(ws, gmRow, lastCol, RGB(255, 235, 156))
+                Call AddBorders(ws, gmRow, lastCol)
             End If
             
-            ' Row 3 - First Data row
-            If startRow + 2 < endRow Then
-                Call ColorHeader(ws, startRow + 2, lastCol)
-                Call AddBorders(ws, startRow + 2, lastCol)
+            ' 🔵 lineNo row
+            If lineNoRow < endRow Then
+                Call ColorRow(ws, lineNoRow, lastCol, RGB(221, 235, 247))
+                Call AddBorders(ws, lineNoRow, lastCol)
             End If
-            
-            ' Row 4 - Blue row
-            If startRow + 3 < endRow Then
-                Call ColorDataRow(ws, startRow + 3, lastCol)
-                Call AddBorders(ws, startRow + 3, lastCol)
-            End If
-            
-            ' Remaining rows - only border
-            Dim j As Long
-            For j = startRow + 4 To endRow - 1
-                Call AddBorders(ws, j, lastCol)
-            Next j
-            
-            i = endRow + 1 ' Skip to next block
+
+            ' ⬜ Data rows (no color, just borders)
+            Dim r As Long
+            For r = lineNoRow + 1 To endRow - 1
+                Call ClearFill(ws, r, lastCol)
+                Call AddBorders(ws, r, lastCol)
+            Next r
+
+            i = endRow + 1 ' Jump to next table
         Else
             i = i + 1
         End If
     Loop
 End Sub
 
-' Find the next completely empty row (used to separate blocks)
 Function FindNextEmptyRow(ws As Worksheet, startRow As Long) As Long
-    Dim r As Long
-    r = startRow + 1
+    Dim r As Long: r = startRow + 1
     Do While Application.WorksheetFunction.CountA(ws.Rows(r)) > 0
         r = r + 1
     Loop
     FindNextEmptyRow = r
 End Function
 
-' Find the last column used in a block
 Function GetLastUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As Long
-    Dim maxCol As Long
+    Dim maxCol As Long: maxCol = 0
     Dim r As Long
     For r = startRow To endRow
-        If ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column > maxCol Then
-            maxCol = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
-        End If
+        Dim rowLastCol As Long
+        rowLastCol = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
+        If rowLastCol > maxCol Then maxCol = rowLastCol
     Next r
     GetLastUsedColumn = maxCol
 End Function
 
-Sub ColorHeader(ws As Worksheet, rowNum As Long, lastCol As Long)
-    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.Color = RGB(255, 235, 156) ' Orange Accent 2, Lighter 80%
+Sub ColorRow(ws As Worksheet, rowNum As Long, lastCol As Long, colorCode As Long)
+    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.Color = colorCode
 End Sub
 
-Sub ColorDataRow(ws As Worksheet, rowNum As Long, lastCol As Long)
-    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.Color = RGB(221, 235, 247) ' Blue Accent 1, Lighter 60%
+Sub ClearFill(ws As Worksheet, rowNum As Long, lastCol As Long)
+    ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol)).Interior.ColorIndex = xlNone
 End Sub
 
 Sub AddBorders(ws As Worksheet, rowNum As Long, lastCol As Long)
