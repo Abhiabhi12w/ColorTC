@@ -1,0 +1,67 @@
+Sub MergeHorizontalHeaders()
+    Dim ws As Worksheet: Set ws = ActiveSheet
+    Dim i As Long: i = 1
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    Do While i <= lastRow
+        If LCase(Trim(ws.Cells(i, 1).Value)) = "docid" Then
+            Dim row1 As Long: row1 = i
+            Dim row2 As Long: row2 = i + 1
+            Dim row3 As Long: row3 = i + 2
+            Dim endRow As Long: endRow = FindNextEmptyRow(ws, row3)
+            Dim lastCol As Long: lastCol = GetMaxUsedColumn(ws, row1, endRow - 1)
+
+            Dim col As Long: col = 1
+            Do While col <= lastCol
+                ' If both row1 and row2 are empty, start merging
+                If IsEmpty(ws.Cells(row1, col)) And IsEmpty(ws.Cells(row2, col)) Then
+                    Dim mergeStart As Long: mergeStart = col
+                    Dim mergeEnd As Long: mergeEnd = col
+
+                    ' Move to the right until row1 or row2 has value
+                    Do While mergeEnd + 1 <= lastCol _
+                        And IsEmpty(ws.Cells(row1, mergeEnd + 1)) _
+                        And IsEmpty(ws.Cells(row2, mergeEnd + 1))
+                        mergeEnd = mergeEnd + 1
+                    Loop
+
+                    ' Merge rows 1, 2, 3 across columns mergeStart to mergeEnd
+                    Dim r As Long
+                    For r = row1 To row3
+                        With ws.Range(ws.Cells(r, mergeStart), ws.Cells(r, mergeEnd))
+                            .Merge
+                            .HorizontalAlignment = xlCenter
+                            .VerticalAlignment = xlCenter
+                        End With
+                    Next r
+
+                    col = mergeEnd + 1
+                Else
+                    col = col + 1
+                End If
+            Loop
+
+            i = endRow + 1
+        Else
+            i = i + 1
+        End If
+    Loop
+End Sub
+
+Function FindNextEmptyRow(ws As Worksheet, startRow As Long) As Long
+    Dim r As Long: r = startRow + 1
+    Do While Application.WorksheetFunction.CountA(ws.Rows(r)) > 0
+        r = r + 1
+    Loop
+    FindNextEmptyRow = r
+End Function
+
+Function GetMaxUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As Long
+    Dim maxCol As Long, r As Long
+    For r = startRow To endRow
+        Dim rowLastCol As Long
+        rowLastCol = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
+        If rowLastCol > maxCol Then maxCol = rowLastCol
+    Next r
+    GetMaxUsedColumn = maxCol
+End Function
