@@ -1,43 +1,36 @@
-Sub FormatProperTables_Final()
-    Dim ws As Worksheet
-    Set ws = ActiveSheet
-
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+Sub FormatTestCases_FinalFix()
+    Dim ws As Worksheet: Set ws = ActiveSheet
     Dim i As Long: i = 1
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
 
     Do While i <= lastRow
         If LCase(Trim(ws.Cells(i, 1).Value)) = "docid" Then
             Dim docRow As Long: docRow = i
-            Dim gmRow As Long: gmRow = i + 1
-            Dim lineNoRow As Long: lineNoRow = i + 2
+            Dim gmRow As Long: docRow + 1
+            Dim blankRow As Long: docRow + 2
+            Dim lineNoRow As Long: docRow + 3
 
-            ' Find where this table block ends
-            Dim endRow As Long: endRow = FindNextEmptyRow(ws, docRow)
+            ' Find end of block (first blank row after lineNo)
+            Dim endRow As Long: endRow = lineNoRow + 1
+            Do While endRow <= lastRow And Application.WorksheetFunction.CountA(ws.Rows(endRow)) > 0
+                endRow = endRow + 1
+            Loop
 
-            ' Dynamically detect last column used in the entire block
-            Dim lastCol As Long: lastCol = GetLastUsedColumn(ws, docRow, endRow - 1)
+            ' Get last used column across entire block
+            Dim lastCol As Long: lastCol = GetMaxUsedColumn(ws, docRow, endRow - 1)
 
-            ' Color docId row 🟧
-            Call ColorRow(ws, docRow, lastCol, RGB(255, 235, 156))   ' Orange
-            Call AddBorders(ws, docRow, lastCol)
+            ' Apply header colors
+            ColorRow ws, docRow, lastCol, RGB(255, 235, 156)    ' Orange → docId
+            ColorRow ws, gmRow, lastCol, RGB(255, 235, 156)     ' Orange → GM
+            ColorRow ws, blankRow, lastCol, RGB(255, 235, 156)  ' Orange → blank row too
+            ColorRow ws, lineNoRow, lastCol, RGB(221, 235, 247) ' Blue → lineNo
 
-            ' Color GM* row 🟧
-            If gmRow < endRow Then
-                Call ColorRow(ws, gmRow, lastCol, RGB(255, 235, 156)) ' Orange
-                Call AddBorders(ws, gmRow, lastCol)
-            End If
-
-            ' Color lineNo row 🔵
-            If lineNoRow < endRow Then
-                Call ColorRow(ws, lineNoRow, lastCol, RGB(221, 235, 247)) ' Blue
-                Call AddBorders(ws, lineNoRow, lastCol)
-            End If
-
-            ' Remaining rows — no fill, only borders
+            ' Borders for all rows in block
             Dim r As Long
-            For r = lineNoRow + 1 To endRow - 1
-                Call ClearFill(ws, r, lastCol)
-                Call AddBorders(ws, r, lastCol)
+            For r = docRow To endRow - 1
+                If Application.WorksheetFunction.CountA(ws.Rows(r)) > 0 Then
+                    AddBorders ws, r, lastCol
+                End If
             Next r
 
             ' Skip to next block
@@ -48,34 +41,19 @@ Sub FormatProperTables_Final()
     Loop
 End Sub
 
-Function FindNextEmptyRow(ws As Worksheet, startRow As Long) As Long
-    Dim r As Long: r = startRow + 1
-    Do While Application.WorksheetFunction.CountA(ws.Rows(r)) > 0
-        r = r + 1
-    Loop
-    FindNextEmptyRow = r
-End Function
-
-Function GetLastUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As Long
-    Dim maxCol As Long: maxCol = 0
-    Dim r As Long
+Function GetMaxUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As Long
+    Dim maxCol As Long, r As Long
     For r = startRow To endRow
         Dim rowLastCol As Long
         rowLastCol = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
         If rowLastCol > maxCol Then maxCol = rowLastCol
     Next r
-    GetLastUsedColumn = maxCol
+    GetMaxUsedColumn = maxCol
 End Function
 
-Sub ColorRow(ws As Worksheet, rowNum As Long, lastCol As Long, colorCode As Long)
+Sub ColorRow(ws As Worksheet, rowNum As Long, lastCol As Long, fillColor As Long)
     With ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol))
-        .Interior.Color = colorCode
-    End With
-End Sub
-
-Sub ClearFill(ws As Worksheet, rowNum As Long, lastCol As Long)
-    With ws.Range(ws.Cells(rowNum, 1), ws.Cells(rowNum, lastCol))
-        .Interior.ColorIndex = xlNone
+        .Interior.Color = fillColor
     End With
 End Sub
 
