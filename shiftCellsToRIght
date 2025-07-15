@@ -1,0 +1,22 @@
+Sub InsertNonEmptyCellsShiftRight()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim cellB As Range, cellC As Range
+
+    Set ws = ThisWorkbook.Sheets("Sheet1") ' Change to your sheet name
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+
+    For i = lastRow To 4 Step -1
+        Set cellB = ws.Cells(i, "B")
+        Set cellC = ws.Cells(i, "C")
+
+        If Not IsEmpty(cellC.Value) Then
+            cellC.Insert Shift:=xlToRight
+        End If
+
+        If Not IsEmpty(cellB.Value) Then
+            cellB.Insert Shift:=xlToRight
+        End If
+    Next i
+End Sub
