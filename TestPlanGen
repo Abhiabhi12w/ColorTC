@@ -1,0 +1,100 @@
+Sub GenerateTestPlanDynamic()
+
+    Dim wsAuto As Worksheet, wsTestPlan As Worksheet, wsTestcase As Worksheet
+    Dim headerRowTP As Range, headerRowTC As Range
+    Dim colScenarioTP As Long, colFormTypeTP As Long, colDocsUsedTP As Long
+    Dim colDocIDTC As Long, colFormTypeTC As Long
+    Dim lastRowTP As Long, lastRowTC As Long
+    Dim i As Long, j As Long
+    Dim formType As String, docList As String
+    Dim genName As String, rawScenario As String
+    Dim cell As Range
+
+    ' Set worksheets
+    Set wsAuto = ThisWorkbook.Sheets("Automation")
+    Set wsTestPlan = ThisWorkbook.Sheets("TestPlan")
+    Set wsTestcase = ThisWorkbook.Sheets("Testcase")
+
+    ' Get GenName from Automation sheet
+    genName = wsAuto.Range("B6").Value
+
+    ' Update Key-Value pairs in TestPlan (A1:B5)
+    wsTestPlan.Range("A1").Value = "PBI"
+    wsTestPlan.Range("B1").Value = wsAuto.Range("B1").Value
+    wsTestPlan.Range("A2").Value = "QA"
+    wsTestPlan.Range("B2").Value = wsAuto.Range("B2").Value
+    wsTestPlan.Range("A3").Value = "DATE"
+    wsTestPlan.Range("B3").Value = wsAuto.Range("B3").Value
+    wsTestPlan.Range("A4").Value = "RuleName"
+    wsTestPlan.Range("B4").Value = wsAuto.Range("B4").Value
+    wsTestPlan.Range("A5").Value = "UpdateDesc"
+    wsTestPlan.Range("B5").Value = wsAuto.Range("B5").Value
+
+    ' Detect headers in TestPlan
+    Set headerRowTP = wsTestPlan.Rows(5)
+    For Each cell In headerRowTP.Cells
+        Select Case LCase(Trim(cell.Value))
+            Case "scenario": colScenarioTP = cell.Column
+            Case "formtype": colFormTypeTP = cell.Column
+            Case "docs used": colDocsUsedTP = cell.Column
+        End Select
+    Next cell
+
+    ' Detect headers in Testcase
+    Set headerRowTC = wsTestcase.Rows(1)
+    For Each cell In headerRowTC.Cells
+        Select Case LCase(Trim(cell.Value))
+            Case "docid": colDocIDTC = cell.Column
+            Case "formtype": colFormTypeTC = cell.Column
+        End Select
+    Next cell
+
+    If colScenarioTP = 0 Or colFormTypeTP = 0 Or colDocsUsedTP = 0 Then
+        MsgBox "Missing headers in TestPlan sheet!", vbCritical
+        Exit Sub
+    End If
+
+    If colDocIDTC = 0 Or colFormTypeTC = 0 Then
+        MsgBox "Missing headers in Testcase sheet!", vbCritical
+        Exit Sub
+    End If
+
+    ' Get last rows
+    lastRowTP = wsTestPlan.Cells(wsTestPlan.Rows.Count, colScenarioTP).End(xlUp).Row
+    lastRowTC = wsTestcase.Cells(wsTestcase.Rows.Count, colDocIDTC).End(xlUp).Row
+
+    ' Loop through TestPlan rows starting from row 6
+    For i = 6 To lastRowTP
+        formType = Trim(wsTestPlan.Cells(i, colFormTypeTP).Value)
+        rawScenario = Trim(wsTestPlan.Cells(i, colScenarioTP).Value)
+
+        If formType = "" Then GoTo NextTPRow
+
+        ' Collect matching docIDs from Testcase
+        docList = ""
+        For j = 2 To lastRowTC
+            If IsNumeric(wsTestcase.Cells(j, 1).Value) Then ' Filter numeric rows
+                If Trim(wsTestcase.Cells(j, colFormTypeTC).Value) = formType Then
+                    If docList = "" Then
+                        docList = wsTestcase.Cells(j, colDocIDTC).Value
+                    Else
+                        docList = docList & vbNewLine & wsTestcase.Cells(j, colDocIDTC).Value
+                    End If
+                End If
+            End If
+        Next j
+
+        ' Update Docs Used
+        wsTestPlan.Cells(i, colDocsUsedTP).Value = docList
+
+        ' Update Scenario with formatted text
+        If rawScenario <> "" Then
+            wsTestPlan.Cells(i, colScenarioTP).Value = "To verify whether " & genName & " is firing when " & rawScenario & " for " & formType
+        End If
+
+NextTPRow:
+    Next i
+
+    MsgBox "TestPlan updated successfully!", vbInformation
+
+End Sub
