@@ -62,3 +62,4 @@ Function GetMaxUsedColumn(ws As Worksheet, startRow As Long, endRow As Long) As 
     Next r
     GetMaxUsedColumn = maxCol
 End Function
+
