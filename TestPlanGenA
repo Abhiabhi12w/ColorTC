@@ -1,0 +1,106 @@
+Sub GenerateTestPlan()
+
+    Dim wsAuto As Worksheet, wsPlan As Worksheet, wsTest As Worksheet
+    Dim lastRow As Long, i As Long
+    Dim genName As String
+    Dim dictFormDocs As Object, dictScenarios As Object
+    Dim allowedFormTypes As Variant
+    Dim docId As String, formType As String
+
+    Set wsAuto = ThisWorkbook.Sheets("Automation")
+    Set wsPlan = ThisWorkbook.Sheets("TestPlan")
+    Set wsTest = ThisWorkbook.Sheets("Testcase")
+
+    Set dictFormDocs = CreateObject("Scripting.Dictionary")
+    Set dictScenarios = CreateObject("Scripting.Dictionary")
+
+    allowedFormTypes = Array("CMS", "UB", "NF-3", "NS", "NF-4", "NF-5")
+
+    ' Read Automation inputs
+    With wsAuto
+        wsPlan.Range("B1").Value = .Range("B1").Value
+        wsPlan.Range("B2").Value = .Range("B2").Value
+        wsPlan.Range("B3").Value = .Range("B3").Value
+        wsPlan.Range("B4").Value = .Range("B4").Value
+        wsPlan.Range("B5").Value = .Range("B5").Value
+        genName = .Range("B6").Value
+    End With
+
+    lastRow = wsTest.Cells(wsTest.Rows.Count, 1).End(xlUp).Row
+    i = 1
+
+    Do While i <= lastRow
+        ' Find "docId" header
+        If LCase(Trim(wsTest.Cells(i, 1).Value)) = "docid" Then
+            docId = Trim(wsTest.Cells(i + 1, 1).Value)
+            formType = Trim(wsTest.Cells(i + 1, 4).Value)
+
+            ' Add to formType-to-docID map
+            If Not dictFormDocs.exists(formType) Then
+                dictFormDocs(formType) = docId
+            Else
+                dictFormDocs(formType) = dictFormDocs(formType) & ", " & docId
+            End If
+
+            ' Move down to find "lineNo"
+            Dim j As Long: j = i + 2
+            Do While j <= lastRow And LCase(Trim(wsTest.Cells(j, 1).Value)) <> "lineno"
+                j = j + 1
+            Loop
+
+            ' Now collect scenarios
+            j = j + 1 ' first scenario row
+            Do While j <= lastRow And IsNumeric(wsTest.Cells(j, 1).Value)
+                Dim scenarioText As String
+                scenarioText = Trim(wsTest.Cells(j, 3).Value)
+                If scenarioText <> "" Then
+                    Dim key As String
+                    key = "s" & dictScenarios.Count + 1
+                    dictScenarios(key) = Array(scenarioText, docId, formType)
+                End If
+                j = j + 1
+            Loop
+
+            i = j
+        Else
+            i = i + 1
+        End If
+    Loop
+
+    ' === Fill Docs Used block in TestPlan ===
+    Dim rowPlan As Long
+    rowPlan = 7
+    Do While wsPlan.Cells(rowPlan, 1).Value <> ""
+        Dim ftPlan As String: ftPlan = Trim(wsPlan.Cells(rowPlan, 1).Value)
+        If dictFormDocs.exists(ftPlan) Then
+            wsPlan.Cells(rowPlan, 6).Value = "Completed"
+            wsPlan.Cells(rowPlan, 7).Value = "Pass"
+            wsPlan.Cells(rowPlan, 8).Value = dictFormDocs(ftPlan)
+        End If
+        rowPlan = rowPlan + 1
+    Loop
+
+    ' === Fill Scenarios in TestPlan ===
+    Dim rowOut As Long: rowOut = 15
+    Dim slNo As Long: slNo = 1
+    Dim k, written As Long: written = 0
+
+    For Each k In dictScenarios.Keys
+        With wsPlan
+            .Cells(rowOut, 1).Value = slNo
+            .Cells(rowOut, 2).Value = "To verify whether " & genName & " is firing when " & _
+                                      dictScenarios(k)(0) & " for " & dictScenarios(k)(2) & " Form type"
+            .Cells(rowOut, 10).Value = dictScenarios(k)(1) ' docId
+            .Cells(rowOut, 11).Value = dictScenarios(k)(2) ' formType
+            .Cells(rowOut, 12).Value = "PASS"
+        End With
+        rowOut = rowOut + 1
+        slNo = slNo + 1
+        written = written + 1
+    Next k
+
+    MsgBox "? TestPlan generated!" & vbCrLf & "Scenarios written: " & written
+
+End Sub
+
+
