@@ -1,0 +1,111 @@
+
+
+' This macro runs directly within your Excel workbook.
+' It reads IDs from Column A of the ActiveSheet,
+' makes HTTP requests, and writes the extracted data to Column B.
+
+Option Explicit
+
+' --- Configuration ---
+' IMPORTANT: Update these constants with your actual values
+ Private Const AUTH_TOKEN As String = "" ' Your Bearer token
+Private Const BASE_URL As String = "https://jsonplaceholder.typicode.com/todos/{id}" ' Base URL with {id} placeholder
+Private Const SEARCH_TEXT As String = "completed" ' The text you are looking for
+Private Const LINES_BEFORE As Long = 0 ' Number of lines to include before SEARCH_TEXT
+Private Const LINES_AFTER As Long = 0  ' Number of lines to include after SEARCH_TEXT
+
+' --- Main Macro Subroutine ---
+Public Sub ProcessIDsAndFetchData()
+
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim currentId As String
+    Dim requestURL As String
+    Dim extractedData As String
+    Dim foundLines As String
+    Dim lineIndex As Long
+    Dim arrLines As Variant
+    Dim j As Long
+    Dim startLine As Long
+    Dim endLine As Long
+    Dim xhr As Object ' For MSXML2.XMLHTTP
+
+    ' Set the worksheet to the currently active sheet
+    Set ws = ActiveSheet
+
+    ' Optimize Excel performance during macro execution
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.EnableEvents = False
+
+    ' Find the last row with data in Column A (ID column)
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+
+    ' Initialize MSXML2.XMLHTTP object
+    Set xhr = CreateObject("MSXML2.XMLHTTP")
+
+    ' Loop through IDs, starting from Row 2 (assuming Row 1 is header)
+    For i = 2 To lastRow
+        currentId = Trim(CStr(ws.Cells(i, "A").Value)) ' Read ID from Column A
+
+        ' Only process if ID is not empty
+        If currentId <> "" Then
+            requestURL = Replace(BASE_URL, "{id}", currentId)
+            extractedData = "" ' Reset for each ID
+            foundLines = ""    ' Reset for each ID
+
+            With xhr
+                .Open "GET", requestURL, False ' False for synchronous request
+                .setRequestHeader "Authorization", "Bearer " & AUTH_TOKEN
+                .setRequestHeader "Content-Type", "application/json" ' Adjust if API expects different content type
+                .send
+
+                If .Status = 200 Then
+                    ' Assuming response is text (even if JSON, we're searching as text)
+                    arrLines = Split(.responseText, vbCrLf) ' Split response into lines
+
+                    For lineIndex = LBound(arrLines) To UBound(arrLines)
+                        If InStr(1, arrLines(lineIndex), SEARCH_TEXT, vbTextCompare) > 0 Then
+                            ' Found the search text, extract nearby lines
+                            startLine = WorksheetFunction.Max(LBound(arrLines), lineIndex - LINES_BEFORE)
+                            endLine = WorksheetFunction.Min(UBound(arrLines), lineIndex + LINES_AFTER)
+
+                            foundLines = foundLines & "--- ID: " & currentId & " ---" & vbCrLf
+                            For j = startLine To endLine
+                                foundLines = foundLines & arrLines(j) & vbCrLf
+                            Next j
+                            ' If you only want the first occurrence per ID, uncomment next line:
+                            ' Exit For
+                        End If
+                    Next lineIndex
+
+                    If foundLines <> "" Then
+                        extractedData = foundLines
+                    Else
+                        extractedData = "No matching text found for ID: " & currentId
+                    End If
+                Else
+                    extractedData = "HTTP Error: " & .Status & " " & .StatusText & " for ID: " & currentId
+                End If
+            End With
+        Else
+            extractedData = "Empty ID in Column A" ' Handle empty ID cells
+        End If
+
+        ' Write extracted data to Column B of the current row
+        ws.Cells(i, "B").Value = extractedData
+        DoEvents ' Yield control to Excel, useful for long loops
+    Next i
+
+    ' Clean up Excel performance settings
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.EnableEvents = True
+
+    ' Clean up object
+    Set xhr = Nothing
+    Set ws = Nothing
+
+    MsgBox "Automation complete. Results written to Column B.", vbInformation
+End Sub
