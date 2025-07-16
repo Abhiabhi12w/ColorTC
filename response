@@ -1,35 +1,39 @@
 
-
-' This macro runs directly within your Excel workbook.
-' It reads IDs from Column A of the ActiveSheet,
-' makes HTTP requests, and writes the extracted data to Column B.
+' This macro reads IDs from Column A, makes HTTP requests,
+' and searches for a specific string within the response,
+' extracting the found string and its surrounding lines.
+' This assumes the raw API response actually contains line breaks (CRLF or LF)
+' to define these "lines." No external files or libraries required.
 
 Option Explicit
 
 ' --- Configuration ---
 ' IMPORTANT: Update these constants with your actual values
- Private Const AUTH_TOKEN As String = "" ' Your Bearer token
+Private Const AUTH_TOKEN As String = "kymtelmerwe......" ' Your Bearer token (if required)
 Private Const BASE_URL As String = "https://jsonplaceholder.typicode.com/todos/{id}" ' Base URL with {id} placeholder
-Private Const SEARCH_TEXT As String = "completed" ' The text you are looking for
-Private Const LINES_BEFORE As Long = 0 ' Number of lines to include before SEARCH_TEXT
-Private Const LINES_AFTER As Long = 0  ' Number of lines to include after SEARCH_TEXT
+Private Const SEARCH_TEXT As String = "title" ' The specific text you are looking for (e.g., "title", "comment")
+Private Const LINES_BEFORE As Long = 2 ' Number of lines to include BEFORE the line with SEARCH_TEXT
+Private Const LINES_AFTER As Long = 1  ' Number of lines to include AFTER the line with SEARCH_TEXT
 
 ' --- Main Macro Subroutine ---
-Public Sub ProcessIDsAndFetchData()
+Public Sub ProcessIDsAndSearchTextResponse()
 
     Dim ws As Worksheet
     Dim lastRow As Long
     Dim i As Long
     Dim currentId As String
     Dim requestURL As String
-    Dim extractedData As String
-    Dim foundLines As String
+    Dim rawResponseText As String ' To store the full response string
+    Dim extractedData As String   ' To store the formatted output for the Excel cell
+    Dim xhr As Object             ' For MSXML2.XMLHTTP
+
+    ' Variables for line parsing and searching
+    Dim arrLines As Variant       ' Array to hold split lines
     Dim lineIndex As Long
-    Dim arrLines As Variant
-    Dim j As Long
+    Dim foundOccurrences As String
     Dim startLine As Long
     Dim endLine As Long
-    Dim xhr As Object ' For MSXML2.XMLHTTP
+    Dim j As Long
 
     ' Set the worksheet to the currently active sheet
     Set ws = ActiveSheet
@@ -52,60 +56,87 @@ Public Sub ProcessIDsAndFetchData()
         ' Only process if ID is not empty
         If currentId <> "" Then
             requestURL = Replace(BASE_URL, "{id}", currentId)
-            extractedData = "" ' Reset for each ID
-            foundLines = ""    ' Reset for each ID
+            extractedData = ""      ' Reset for each ID
+            foundOccurrences = ""   ' Reset for each ID
 
             With xhr
                 .Open "GET", requestURL, False ' False for synchronous request
-                .setRequestHeader "Authorization", "Bearer " & AUTH_TOKEN
-                .setRequestHeader "Content-Type", "application/json" ' Adjust if API expects different content type
+                If AUTH_TOKEN <> "" Then
+                    .setRequestHeader "Authorization", "Bearer " & AUTH_TOKEN
+                End If
+                .setRequestHeader "Content-Type", "application/json" ' For JSON APIs
                 .send
 
                 If .Status = 200 Then
-                    ' Assuming response is text (even if JSON, we're searching as text)
-                    arrLines = Split(.responseText, vbCrLf) ' Split response into lines
+                    rawResponseText = .responseText
 
-                    For lineIndex = LBound(arrLines) To UBound(arrLines)
-                        If InStr(1, arrLines(lineIndex), SEARCH_TEXT, vbTextCompare) > 0 Then
-                            ' Found the search text, extract nearby lines
-                            startLine = WorksheetFunction.Max(LBound(arrLines), lineIndex - LINES_BEFORE)
-                            endLine = WorksheetFunction.Min(UBound(arrLines), lineIndex + LINES_AFTER)
+                    ' --- Robust Line Splitting ---
+                    ' This attempts to split the text into lines based on common line endings.
+                    ' It tries to handle both Windows (CRLF) and Unix/Web (LF) line endings.
+                    rawResponseText = Replace(rawResponseText, vbCrLf, vbLf) ' Normalize CRLF to LF first
+                    arrLines = Split(rawResponseText, vbLf) ' Then split by LF
+                    ' --- End Robust Line Splitting ---
+                    
+                    ' If after splitting, there's only one line, it means no line breaks were found.
+                    ' In that case, the raw string is treated as the single "line".
+                    If UBound(arrLines) = 0 Then
+                         If Len(rawResponseText) > 0 Then
+                             ReDim arrLines(0)
+                             arrLines(0) = rawResponseText
+                         Else
+                             ' Empty response
+                             ReDim arrLines(-1) ' Empty array
+                         End If
+                    End If
 
-                            foundLines = foundLines & "--- ID: " & currentId & " ---" & vbCrLf
-                            For j = startLine To endLine
-                                foundLines = foundLines & arrLines(j) & vbCrLf
-                            Next j
-                            ' If you only want the first occurrence per ID, uncomment next line:
-                            ' Exit For
-                        End If
-                    Next lineIndex
 
-                    If foundLines <> "" Then
-                        extractedData = foundLines
+                    ' --- Search for SEARCH_TEXT in each identified "line" ---
+                    If UBound(arrLines) >= 0 Then ' Check if there are any lines
+                        For lineIndex = LBound(arrLines) To UBound(arrLines)
+                            ' Use InStr for case-insensitive search (vbTextCompare)
+                            If InStr(1, arrLines(lineIndex), SEARCH_TEXT, vbTextCompare) > 0 Then
+                                ' Found the search text, now extract nearby "lines"
+                                startLine = WorksheetFunction.Max(LBound(arrLines), lineIndex - LINES_BEFORE)
+                                endLine = WorksheetFunction.Min(UBound(arrLines), lineIndex + LINES_AFTER)
+
+                                foundOccurrences = vbCrLf
+                                For j = startLine To endLine
+                                    foundOccurrences = foundOccurrences & arrLines(j) & vbCrLf
+                                Next j
+                                foundOccurrences = foundOccurrences & vbCrLf ' Add an extra line break for separation between matches
+                                ' If you only want the first occurrence per ID, uncomment next line:
+                                ' Exit For
+                            End If
+                        Next lineIndex
+                    End If
+
+                    If foundOccurrences <> "" Then
+                        extractedData = foundOccurrences
                     Else
                         extractedData = "No matching text found for ID: " & currentId
                     End If
+
                 Else
-                    extractedData = "HTTP Error: " & .Status & " " & .StatusText & " for ID: " & currentId
+                    extractedData = "HTTP Error (" & .Status & ") " & .StatusText & " for ID: " & currentId
                 End If
             End With
         Else
-            extractedData = "Empty ID in Column A" ' Handle empty ID cells
+            extractedData = "Empty ID in Column A (Row " & i & ")"
         End If
 
-        ' Write extracted data to Column B of the current row
         ws.Cells(i, "B").Value = extractedData
+        ws.Cells(i, "B").WrapText = True ' Ensure the cell wraps long text
         DoEvents ' Yield control to Excel, useful for long loops
     Next i
 
-    ' Clean up Excel performance settings
+    ' Restore Excel performance settings
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     Application.EnableEvents = True
 
-    ' Clean up object
+    ' Clean up objects
     Set xhr = Nothing
     Set ws = Nothing
 
-    MsgBox "Automation complete. Results written to Column B.", vbInformation
+    MsgBox "Automation complete.", vbInformation
 End Sub
