@@ -1,0 +1,130 @@
+Sub ExportToSQLIngestion_Precise()
+
+    ' Declaring variables
+    Dim wsSource As Worksheet
+    Dim wsDest As Worksheet
+    Dim lastRow As Long
+    Dim lastCol As Long
+    Dim headerRow As Variant
+    Dim docDict As Object
+    Dim i As Long
+    Dim r As Long
+    Dim docID As Variant
+    Dim pasteRow As Long                ' Current row pointer in destination sheet
+    Dim docData As Variant
+    Dim currentHeaderCell As Range
+    Dim dataTableStartRow As Long       ' Marks the beginning of the header+data table for borders
+
+    ' Set references to the source and destination worksheets
+    Set wsSource = ThisWorkbook.Sheets("Automation")
+    Set wsDest = ThisWorkbook.Sheets("SQL Ingestion")
+
+    ' Create an instance of the Scripting.Dictionary object
+    Set docDict = CreateObject("Scripting.Dictionary")
+
+    ' --- Determine Data Range and Headers (Headers at Row 14, Data from Row 15) ---
+    lastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsSource.Cells(14, wsSource.Columns.Count).End(xlToLeft).Column
+
+    ' --- Input Validation ---
+    If lastCol < 1 Then
+        MsgBox "No headers found in row 14 of the 'Automation' sheet. Please ensure headers are present.", vbCritical
+        Exit Sub
+    End If
+    If lastRow < 15 Then
+        MsgBox "No data found starting from row 15 in the 'Automation' sheet. Output might be incomplete.", vbInformation
+    End If
+
+    ' Store headers (assuming headers are in row 14)
+    headerRow = wsSource.Range(wsSource.Cells(14, 1), wsSource.Cells(14, lastCol)).Value
+
+    ' --- Group Data by Doc_ID ---
+    For r = 15 To lastRow
+        docID = Trim(CStr(wsSource.Cells(r, 1).Value))
+        If docID = "" Then GoTo NextSourceRow
+        If Not docDict.exists(docID) Then docDict.Add docID, New Collection
+
+        If lastCol = 1 Then
+            Dim tempArray(1 To 1, 1 To 1) As Variant
+            tempArray(1, 1) = wsSource.Cells(r, 1).Value
+            docDict(docID).Add tempArray
+        Else
+            docDict(docID).Add wsSource.Range(wsSource.Cells(r, 1), wsSource.Cells(r, lastCol)).Value
+        End If
+NextSourceRow:
+    Next r
+
+    ' --- Input Validation: Check if any Doc_IDs were processed ---
+    If docDict.Count = 0 Then
+        MsgBox "No valid Doc_IDs found or processed from the 'Automation' sheet. Output sheet will be empty.", vbInformation
+        Exit Sub
+    End If
+
+    ' --- Export Data to SQL Ingestion Sheet ---
+
+    wsDest.Cells.ClearContents
+    wsDest.Cells.ClearFormats
+    
+    ' Initialize pasteRow to ensure the first heading appears after 2 empty rows (i.e., in row 3).
+    pasteRow = 1 ' This means row 1 and 2 will be blank initially.
+
+    For Each docID In docDict.Keys
+
+        ' 1. Add 2 empty rows ABOVE the "Bill flag table - Doc_ID" heading
+        pasteRow = pasteRow + 2
+
+        ' 2. Paste the Heading for the current Doc_ID group
+        wsDest.Cells(pasteRow, 1).Value = "Bill flag table - " & CStr(docID)
+        
+        With wsDest.Cells(pasteRow, 1)
+            .Font.Bold = True
+            .Font.Size = 12
+        End With
+        
+        ' 3. Add 2 empty rows BELOW the heading and BEFORE the table headers
+        pasteRow = pasteRow + 3 ' Move from heading row to the row where headers should be, skipping 2 rows.
+
+        ' Mark the start row of the actual table for borders (headers begin here)
+        dataTableStartRow = pasteRow
+
+        ' 4. Paste the Headers for the current Doc_ID group
+        For i = 1 To lastCol
+            Set currentHeaderCell = wsDest.Cells(pasteRow, i)
+            If IsArray(headerRow) Then
+                currentHeaderCell.Value = headerRow(1, i)
+            Else
+                currentHeaderCell.Value = headerRow
+            End If
+            currentHeaderCell.Font.Bold = True
+            currentHeaderCell.Interior.Color = RGB(255, 230, 200) ' Light orange
+        Next i
+
+        pasteRow = pasteRow + 1 ' Move to the next row for data
+
+        ' 5. Paste the Data Rows for the current Doc_ID group
+        For Each docData In docDict(docID)
+            For i = 1 To lastCol
+                wsDest.Cells(pasteRow, i).Value = docData(1, i)
+            Next i
+            pasteRow = pasteRow + 1
+        Next docData
+
+        ' 6. Apply Borders ONLY to the Header and Data block
+        ' The range for borders covers from dataTableStartRow (headers)
+        ' to pasteRow - 1 (the last data row).
+        With wsDest.Range(wsDest.Cells(dataTableStartRow, 1), wsDest.Cells(pasteRow - 1, lastCol)).Borders
+            .LineStyle = xlContinuous
+            .Color = vbBlack
+        End With
+        
+        ' After the table, pasteRow is now pointing to the row *immediately after* the last data row.
+        ' The start of the next loop iteration will add 2 more rows before the next heading,
+        ' ensuring 2 empty rows between the end of the current table and the start of the next heading.
+
+    Next docID
+
+    ' --- Final Formatting and Completion ---
+    wsDest.Columns("A:Z").AutoFit
+    MsgBox "Data exported to SQL Ingestion sheet successfully!", vbInformation
+
+End Sub
