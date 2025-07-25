@@ -1,0 +1,89 @@
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.zip.*;
+
+public class XmindParser {
+
+    public static void main(String[] args) throws Exception {
+        String xmindPath = "your_file.xmind"; // 🔁 change to your file path
+
+        // Step 1: Extract content.json from .xmind (ZIP)
+        String jsonContent = extractContentJson(xmindPath);
+
+        // Step 2: Parse content.json
+        JSONObject root = new JSONObject(jsonContent);
+        JSONArray sheets = root.getJSONArray("roots");
+
+        List<List<String>> allPaths = new ArrayList<>();
+
+        for (int i = 0; i < sheets.length(); i++) {
+            JSONObject sheet = sheets.getJSONObject(i);
+            JSONObject topic = sheet.getJSONObject("topic");
+            traverse(topic, new ArrayList<>(), allPaths);
+        }
+
+        // Step 3: Write to CSV
+        writeCSV(allPaths, "xmind_scenarios.csv");
+        System.out.println("✅ Done! Saved to xmind_scenarios.csv");
+    }
+
+    private static void traverse(JSONObject node, List<String> path, List<List<String>> allPaths) {
+        String title = node.optString("title", "(No Title)");
+        List<String> newPath = new ArrayList<>(path);
+        newPath.add(title);
+
+        JSONArray children = node.optJSONObject("children") != null ?
+                node.getJSONObject("children").optJSONArray("attached") : null;
+
+        if (children == null || children.isEmpty()) {
+            allPaths.add(newPath);
+        } else {
+            for (int i = 0; i < children.length(); i++) {
+                traverse(children.getJSONObject(i), newPath, allPaths);
+            }
+        }
+    }
+
+    private static String extractContentJson(String xmindPath) throws IOException {
+        ZipFile zipFile = new ZipFile(xmindPath);
+        ZipEntry entry = zipFile.getEntry("content.json");
+
+        if (entry == null) throw new FileNotFoundException("content.json not found in .xmind");
+
+        InputStream stream = zipFile.getInputStream(entry);
+        return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    private static void writeCSV(List<List<String>> paths, String outputPath) throws IOException {
+        BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath));
+        for (List<String> path : paths) {
+            String flowType = classifyPath(path);
+            writer.write(String.join(",", escape(path)) + "," + flowType);
+            writer.newLine();
+        }
+        writer.close();
+    }
+
+    private static String classifyPath(List<String> path) {
+        String last = path.get(path.size() - 1).toLowerCase();
+        if (last.contains("fire bundle") || last.contains("message_"))
+            return "Positive";
+        if (last.contains("alternateoutcome") || last.contains("rule does not apply"))
+            return "Negative";
+        return "Unknown";
+    }
+
+    private static List<String> escape(List<String> values) {
+        List<String> escaped = new ArrayList<>();
+        for (String val : values) {
+            if (val.contains(",")) val = "\"" + val + "\"";
+            escaped.add(val);
+        }
+        return escaped;
+    }
+}
