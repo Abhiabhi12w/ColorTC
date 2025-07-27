@@ -1,0 +1,205 @@
+package com.example;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+public class XMindFlowExtractor {
+
+    // CHANGE THESE TO YOUR ENVIRONMENT:
+    private static final String XMIND_FILE_PATH = "C:\\Users\\home\\Documents\\xmind\\test.xmind"; // Your .xmind file
+    private static final String OUTPUT_DIRECTORY = "C:\\\\Users\\\\home\\\\Documents\\\\xmind\\\\";         // Folder for output .csv
+
+    public static void main(String[] args) {
+        try {
+            XMindFlowExtractor extractor = new XMindFlowExtractor();
+            System.out.println("Processing XMind file: " + XMIND_FILE_PATH);
+            List<FlowPath> paths = extractor.extractFlowPaths(XMIND_FILE_PATH);
+
+            String outputFile = extractor.generateOutputFilename();
+            new File(OUTPUT_DIRECTORY).mkdirs(); // Make directory
+
+            extractor.writeToCSV(paths, outputFile);
+
+            System.out.println("\n✅ Extracted " + paths.size() + " flow paths");
+            System.out.println("📄 Output file: " + outputFile);
+            extractor.printSummary(paths);
+
+        } catch (Exception e) {
+            System.err.println("❌ Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private String generateOutputFilename() {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String baseName = new File(XMIND_FILE_PATH).getName().replace(".xmind", "");
+        return OUTPUT_DIRECTORY + baseName + "_flows_" + timestamp + ".csv";
+    }
+
+    //================ Core Logic ====================
+
+    // Updated FlowPath, now holds the pathChoices for TTFTF
+    public static class FlowPath {
+        private final List<String> steps;
+        private final boolean isPositive;
+        private final List<Character> pathChoices; // 'T' or 'F' at each branching
+
+        public FlowPath(List<String> steps, boolean isPositive, List<Character> pathChoices) {
+            this.steps = new ArrayList<>(steps);
+            this.isPositive = isPositive;
+            this.pathChoices = new ArrayList<>(pathChoices);
+        }
+
+        public List<String> getSteps() { return steps; }
+        public boolean isPositive()    { return isPositive; }
+        public String getOutcome()     { return isPositive ? "Positive" : "Negative"; }
+
+        public String generatePathString() {
+            StringBuilder sb = new StringBuilder();
+            for (char c : pathChoices) sb.append(c);
+            return sb.toString();
+        }
+    }
+
+    public List<FlowPath> extractFlowPaths(String xmindFilePath) throws IOException {
+        String contentJson = extractContentJson(xmindFilePath);
+        return parseFlowPaths(contentJson);
+    }
+
+    private String extractContentJson(String xmindFilePath) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(xmindFilePath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if ("content.json".equals(entry.getName())) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) baos.write(buffer, 0, len);
+                    return baos.toString(StandardCharsets.UTF_8);
+                }
+            }
+        }
+        throw new IOException("content.json not found in XMind file");
+    }
+
+    private List<FlowPath> parseFlowPaths(String contentJson) {
+        List<FlowPath> allPaths = new ArrayList<>();
+        JSONArray rootArray = new JSONArray(contentJson);
+        for (int i = 0; i < rootArray.length(); i++) {
+            JSONObject sheet = rootArray.getJSONObject(i);
+            if (sheet.has("rootTopic")) {
+                // Start traversal. Empty path, empty choice-path
+                traverseAndExtractPaths(sheet.getJSONObject("rootTopic"),
+                        new ArrayList<>(), new ArrayList<>(), allPaths);
+            }
+        }
+        return allPaths;
+    }
+
+    /**
+     * The CRUCIAL recursive function. For each level of tree:
+     *  - Adds the node's title to the path
+     *  - If children present, for each child:
+     *      - "T" if it's the first child
+     *      - "F" if not
+     *  - When at leaf node, creates a FlowPath with correct step and T/F path.
+     */
+    private void traverseAndExtractPaths(JSONObject node,
+                                         List<String> currentPath,
+                                         List<Character> pathChoices,
+                                         List<FlowPath> allPaths) {
+        String title = node.optString("title", "");
+        List<String> newPath = new ArrayList<>(currentPath);
+        if (!title.isEmpty())
+            newPath.add(title);
+
+        // LEAF node logic: no children or children.attached is null.
+        JSONArray attached = null;
+        if (node.has("children")) {
+            JSONObject children = node.getJSONObject("children");
+            if (children.has("attached")) {
+                attached = children.getJSONArray("attached");
+            }
+        }
+        if (attached == null || attached.length() == 0) {
+            boolean isPositive = isPositiveOutcome(title);
+            allPaths.add(new FlowPath(newPath, isPositive, pathChoices));
+            return;
+        }
+
+        // Traverse children, assign T/F based on index.
+        for (int i = 0; i < attached.length(); i++) {
+            JSONObject child = attached.getJSONObject(i);
+
+            List<Character> newChoices = new ArrayList<>(pathChoices);
+            newChoices.add(i == 0 ? 'T' : 'F');
+            traverseAndExtractPaths(child, newPath, newChoices, allPaths);
+        }
+    }
+
+    // Improve the outcome test as you need.
+    private boolean isPositiveOutcome(String nodeTitle) {
+        String lower = nodeTitle.toLowerCase();
+        if (lower.contains("fire bundle") || lower.contains("message_"))
+            return true;
+        if (lower.contains("alt outcome") || lower.contains("alternateoutcome")
+                || lower.contains("rule does not apply") || lower.contains("does not apply"))
+            return false;
+        // Default: treat as positive
+        return true;
+    }
+
+    public void writeToCSV(List<FlowPath> paths, String outputFile) throws IOException {
+        try (FileWriter writer = new FileWriter(outputFile);
+             CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT)) {
+            int maxSteps = paths.stream().mapToInt(p -> p.getSteps().size()).max().orElse(0);
+            // CSV header
+            List<String> headers = new ArrayList<>();
+            for (int i = 1; i <= maxSteps; i++) headers.add("Step_" + i);
+            headers.add("Outcome");
+            headers.add("Path_String");
+            headers.add("Generated_At");
+            csvPrinter.printRecord(headers);
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"));
+            for (FlowPath path : paths) {
+                List<String> row = new ArrayList<>();
+                for (int i = 0; i < maxSteps; i++)
+                    row.add(i < path.getSteps().size() ? escapeCommas(path.getSteps().get(i)) : "");
+                row.add(path.getOutcome());
+                row.add(path.generatePathString());
+                row.add(timestamp);
+                csvPrinter.printRecord(row);
+            }
+        }
+    }
+
+    private String escapeCommas(String text) {
+        if (text.contains(",")) return "\"" + text.replace("\"", "\"\"") + "\"";
+        return text;
+    }
+
+    // Preview to console
+    public void printSummary(List<FlowPath> paths) {
+        long positive = paths.stream().filter(FlowPath::isPositive).count();
+        long negative = paths.size() - positive;
+        System.out.println("\n📊 Extract Summary:");
+        System.out.println("Total Paths: " + paths.size());
+        System.out.println("Positive: " + positive + ", Negative: " + negative);
+        System.out.println("Sample Paths:");
+        paths.stream().limit(5).forEach(path -> {
+            String preview = String.join(" → ", path.getSteps().subList(0, Math.min(3, path.getSteps().size())));
+            if (path.getSteps().size() > 3) preview += " → ...";
+            System.out.println("  " + preview + " [Outcome: " + path.getOutcome() + ", Path: " + path.generatePathString() + "]");
+        });
+    }
+}
