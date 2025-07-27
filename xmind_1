@@ -16,8 +16,8 @@ import java.util.zip.ZipInputStream;
 public class XMindFlowExtractor {
 
     // CHANGE THESE TO YOUR ENVIRONMENT:
-    private static final String XMIND_FILE_PATH = "C:\\Users\\home\\Documents\\xmind\\test.xmind"; // Your .xmind file
-    private static final String OUTPUT_DIRECTORY = "C:\\\\Users\\\\home\\\\Documents\\\\xmind\\\\";         // Folder for output .csv
+    private static final String XMIND_FILE_PATH = "C:\\Users\\home\\Documents\\xmind\\test.xmind";
+    private static final String OUTPUT_DIRECTORY = "C:\\Users\\home\\Documents\\xmind\\";
 
     public static void main(String[] args) {
         try {
@@ -26,7 +26,7 @@ public class XMindFlowExtractor {
             List<FlowPath> paths = extractor.extractFlowPaths(XMIND_FILE_PATH);
 
             String outputFile = extractor.generateOutputFilename();
-            new File(OUTPUT_DIRECTORY).mkdirs(); // Make directory
+            new File(OUTPUT_DIRECTORY).mkdirs();
 
             extractor.writeToCSV(paths, outputFile);
 
@@ -46,13 +46,10 @@ public class XMindFlowExtractor {
         return OUTPUT_DIRECTORY + baseName + "_flows_" + timestamp + ".csv";
     }
 
-    //================ Core Logic ====================
-
-    // Updated FlowPath, now holds the pathChoices for TTFTF
     public static class FlowPath {
         private final List<String> steps;
         private final boolean isPositive;
-        private final List<Character> pathChoices; // 'T' or 'F' at each branching
+        private final List<Character> pathChoices;
 
         public FlowPath(List<String> steps, boolean isPositive, List<Character> pathChoices) {
             this.steps = new ArrayList<>(steps);
@@ -98,56 +95,92 @@ public class XMindFlowExtractor {
         for (int i = 0; i < rootArray.length(); i++) {
             JSONObject sheet = rootArray.getJSONObject(i);
             if (sheet.has("rootTopic")) {
-                // Start traversal. Empty path, empty choice-path
                 traverseAndExtractPaths(sheet.getJSONObject("rootTopic"),
-                        new ArrayList<>(), new ArrayList<>(), allPaths);
+                        new ArrayList<>(), new ArrayList<>(), allPaths, null, -1);
             }
         }
         return allPaths;
     }
 
     /**
-     * The CRUCIAL recursive function. For each level of tree:
-     *  - Adds the node's title to the path
-     *  - If children present, for each child:
-     *      - "T" if it's the first child
-     *      - "F" if not
-     *  - When at leaf node, creates a FlowPath with correct step and T/F path.
+     * Enhanced: now supports testable scenario logic.
+     * For a negative (alternate/else) branch, add "not"/"!="/etc to the *parent* node's condition
+     * as the value for this step in the path.
      */
     private void traverseAndExtractPaths(JSONObject node,
-                                         List<String> currentPath,
-                                         List<Character> pathChoices,
-                                         List<FlowPath> allPaths) {
-        String title = node.optString("title", "");
-        List<String> newPath = new ArrayList<>(currentPath);
-        if (!title.isEmpty())
-            newPath.add(title);
+                                     List<String> currentPath,
+                                     List<Character> pathChoices,
+                                     List<FlowPath> allPaths,
+                                     String parentDecision,
+                                     int childIdx) {
+    String title = node.optString("title", "");
 
-        // LEAF node logic: no children or children.attached is null.
-        JSONArray attached = null;
-        if (node.has("children")) {
-            JSONObject children = node.getJSONObject("children");
-            if (children.has("attached")) {
-                attached = children.getJSONArray("attached");
-            }
-        }
-        if (attached == null || attached.length() == 0) {
-            boolean isPositive = isPositiveOutcome(title);
-            allPaths.add(new FlowPath(newPath, isPositive, pathChoices));
-            return;
-        }
-
-        // Traverse children, assign T/F based on index.
-        for (int i = 0; i < attached.length(); i++) {
-            JSONObject child = attached.getJSONObject(i);
-
-            List<Character> newChoices = new ArrayList<>(pathChoices);
-            newChoices.add(i == 0 ? 'T' : 'F');
-            traverseAndExtractPaths(child, newPath, newChoices, allPaths);
+    JSONArray attached = null;
+    if (node.has("children")) {
+        JSONObject children = node.getJSONObject("children");
+        if (children.has("attached")) {
+            attached = children.getJSONArray("attached");
         }
     }
+    boolean isLeaf = (attached == null || attached.length() == 0);
 
-    // Improve the outcome test as you need.
+    List<String> newPath = new ArrayList<>(currentPath);
+
+    // Root node: just add
+    if (currentPath.isEmpty() && !title.isEmpty()) newPath.add(title);
+    // For all other nodes:
+    else if (childIdx == 0 && !isAltOutcomeNode(title)) {
+        // Positive/first branch: add node label as step
+        newPath.add(title);
+    } else if (isAltOutcomeNode(title)) {
+        // When hitting an alt/negative outcome:
+        // 1. Negate the last (parent) step in the path for this branch
+        if (!newPath.isEmpty() && parentDecision != null) {
+            newPath.set(newPath.size() - 1, negateDecision(parentDecision));
+        }
+        // 2. Add the alt outcome text as the final step
+        newPath.add(title);
+    } else if (!title.isEmpty()) {
+        // For additional branches, add as is (rare cases)
+        newPath.add(title);
+    }
+
+    if (isLeaf) {
+        boolean isPositive = isPositiveOutcome(title);
+        allPaths.add(new FlowPath(newPath, isPositive, pathChoices));
+        return;
+    }
+
+    // Traverse children, assign T/F based on index.
+    for (int i = 0; i < attached.length(); i++) {
+        JSONObject child = attached.getJSONObject(i);
+        List<Character> newChoices = new ArrayList<>(pathChoices);
+        newChoices.add(i == 0 ? 'T' : 'F');
+        traverseAndExtractPaths(child, newPath, newChoices, allPaths, title, i);
+    }
+}
+
+
+    // Heuristic for "is this node an alt/negative (alternate outcome) node"
+    private boolean isAltOutcomeNode(String title) {
+        String lower = title.toLowerCase();
+        return lower.contains("alt outcome") ||
+                lower.contains("alternateoutcome") ||
+                lower.contains("does not apply") ||
+                lower.contains("rule does not apply") ||
+                lower.contains("otherwise");
+    }
+
+    // Negates a parent decision for scenario column (e.g., "A is B" → "A is not B", "X == Y" → "X != Y")
+    private String negateDecision(String s) {
+        if (s.contains("==")) return s.replace("==", "!=");
+        if (s.contains("!=")) return s.replace("!=", "==");
+        if (s.toLowerCase().contains(" is ") && !s.toLowerCase().contains("not ")) return s.replaceFirst(" is ", " is not ");
+        if (s.toLowerCase().contains(" not ")) return s.replace(" not ", " ");
+        if (s.contains("equals")) return s.replace("equals", "does not equal");
+        return "NOT(" + s + ")";
+    }
+
     private boolean isPositiveOutcome(String nodeTitle) {
         String lower = nodeTitle.toLowerCase();
         if (lower.contains("fire bundle") || lower.contains("message_"))
