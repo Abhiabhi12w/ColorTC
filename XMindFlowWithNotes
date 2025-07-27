@@ -1,0 +1,362 @@
+package com.example;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+public class XMindFlowWithNotes {
+
+    private static final String XMIND_FILE_PATH = "C:\\Users\\home\\Documents\\xmind\\test.xmind";
+    private static final String OUTPUT_DIRECTORY = "C:\\Users\\home\\Documents\\xmind\\";
+    private static final String TARGET_ROOT_TITLE = ""; // set "" for default, or name for filter
+
+    public static void main(String[] args) {
+        try {
+            XMindFlowWithNotes extractor = new XMindFlowWithNotes();
+            List<FlowPath> paths = extractor.extractFlowPaths(XMIND_FILE_PATH);
+            if (paths.isEmpty()) {
+                System.err.println("No scenarios extracted.");
+                return;
+            }
+            String outputFile = extractor.generateOutputFilename();
+            new File(OUTPUT_DIRECTORY).mkdirs();
+            extractor.writeToExcel(paths, outputFile);
+            System.out.println("\n✅ Extracted " + paths.size() + " flow paths");
+            System.out.println("📄 Output file: " + outputFile);
+            extractor.printSummary(paths);
+        } catch (Exception e) {
+            System.err.println("❌ Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private String generateOutputFilename() {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String baseName = new File(XMIND_FILE_PATH).getName().replace(".xmind", "");
+        return OUTPUT_DIRECTORY + baseName + "_flows_" + timestamp + ".xlsx";
+    }
+
+    public static class FlowPath {
+        private final List<String> steps;
+        private final boolean isPositive;
+        private final int negatedIdx;
+        private final List<Character> pathChoices;
+        private final String flowName;
+        private final String notePlain;
+
+        public FlowPath(List<String> steps, boolean isPositive, int negatedIdx,
+                        List<Character> pathChoices, String flowName, String notePlain) {
+            this.steps = new ArrayList<>(steps);
+            this.isPositive = isPositive;
+            this.negatedIdx = negatedIdx;
+            this.pathChoices = new ArrayList<>(pathChoices);
+            this.flowName = flowName;
+            this.notePlain = notePlain;
+        }
+        public List<String> getSteps() { return steps; }
+        public boolean isPositive() { return isPositive; }
+        public String getOutcome() { return isPositive ? "Positive" : "Negative"; }
+        public String generatePathString() {
+            StringBuilder sb = new StringBuilder();
+            for (char c : pathChoices) sb.append(c);
+            return sb.toString();
+        }
+        public int getNegatedIdx() { return negatedIdx; }
+        public String getFlowName() { return flowName; }
+        public String getNotePlain() { return notePlain; }
+    }
+
+    public List<FlowPath> extractFlowPaths(String xmindFilePath) throws IOException {
+        String contentJson = extractContentJson(xmindFilePath);
+        List<FlowPath> allPaths = new ArrayList<>();
+        JSONArray rootArray = new JSONArray(contentJson);
+        boolean found = false;
+        for (int i = 0; i < rootArray.length(); i++) {
+            JSONObject sheet = rootArray.getJSONObject(i);
+            if (sheet.has("rootTopic")) {
+                JSONObject root = sheet.getJSONObject("rootTopic");
+                String rootTitle = root.optString("title", "");
+                if (TARGET_ROOT_TITLE.isEmpty()) {
+                    traverseAndExtractPaths(root, new ArrayList<>(), new ArrayList<>(),
+                        allPaths, null, -1, -1, rootTitle);
+                    found = true;
+                    break;
+                } else if (rootTitle.equalsIgnoreCase(TARGET_ROOT_TITLE)) {
+                    traverseAndExtractPaths(root, new ArrayList<>(), new ArrayList<>(),
+                        allPaths, null, -1, -1, rootTitle);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            System.err.println("❌ No flow found with root topic: " + 
+                (TARGET_ROOT_TITLE.isEmpty() ? "[any]" : TARGET_ROOT_TITLE));
+        }
+        return allPaths;
+    }
+
+    private String extractContentJson(String xmindFilePath) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(xmindFilePath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if ("content.json".equals(entry.getName())) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) baos.write(buffer, 0, len);
+                    return baos.toString(StandardCharsets.UTF_8);
+                }
+            }
+        }
+        throw new IOException("content.json not found in XMind file");
+    }
+
+    private void traverseAndExtractPaths(JSONObject node,
+                                         List<String> currentPath,
+                                         List<Character> pathChoices,
+                                         List<FlowPath> allPaths,
+                                         String parentDecision,
+                                         int childIdx,
+                                         int negatedIdx,
+                                         String flowName) {
+        String title = node.optString("title", "");
+        JSONArray attached = null;
+        if (node.has("children")) {
+            JSONObject children = node.getJSONObject("children");
+            if (children.has("attached")) {
+                attached = children.getJSONArray("attached");
+            }
+        }
+        boolean isLeaf = (attached == null || attached.length() == 0);
+        List<String> newPath = new ArrayList<>(currentPath);
+        int newNegatedIdx = negatedIdx;
+        if (currentPath.isEmpty() && !title.isEmpty()) newPath.add(title);
+        else if (childIdx == 0 && !isAltOutcomeNode(title)) { newPath.add(title); }
+        else if (isAltOutcomeNode(title)) {
+            if (!newPath.isEmpty() && parentDecision != null) {
+                newPath.set(newPath.size() - 1, negateDecision(parentDecision));
+                newNegatedIdx = newPath.size() - 1;
+            }
+            newPath.add(title);
+        } else if (!title.isEmpty()) { newPath.add(title); }
+
+        if (isLeaf) {
+            boolean isPositive = isPositiveOutcome(title);
+            String notePlain = extractNotePlain(node);
+            allPaths.add(new FlowPath(newPath, isPositive, newNegatedIdx, pathChoices, flowName, notePlain));
+            return;
+        }
+        for (int i = 0; i < attached.length(); i++) {
+            JSONObject child = attached.getJSONObject(i);
+            List<Character> newChoices = new ArrayList<>(pathChoices);
+            newChoices.add(i == 0 ? 'T' : 'F');
+            traverseAndExtractPaths(child, newPath, newChoices, allPaths, title, i, newNegatedIdx, flowName);
+        }
+    }
+
+    // Robust note extraction, covers all known XMind note formats
+    private String extractNotePlain(JSONObject node) {
+        if (node.has("notes")) {
+            Object noteObj = node.get("notes");
+            if (noteObj instanceof JSONObject) {
+                JSONObject n = (JSONObject) noteObj;
+                // "plain" is a nested object with "content" (new XMind format)
+                if (n.has("plain")) {
+                    Object plainObj = n.get("plain");
+                    if (plainObj instanceof JSONObject) {
+                        JSONObject plainJson = (JSONObject) plainObj;
+                        return plainJson.optString("content", "");
+                    } else if (plainObj instanceof String) {
+                        // Fallback: plain is just string (older XMind)
+                        return (String) plainObj;
+                    }
+                } else if (n.has("content")) {
+                    return n.optString("content", "");
+                }
+            }
+        }
+        return "";
+    }
+
+    private boolean isAltOutcomeNode(String title) {
+        String lower = title.toLowerCase();
+        return lower.contains("alt outcome") ||
+                lower.contains("alternateoutcome") ||
+                lower.contains("does not apply") ||
+                lower.contains("rule does not apply") ||
+                lower.contains("otherwise");
+    }
+    private String negateDecision(String s) {
+        String lower = s.toLowerCase().trim();
+        if (s.contains("==")) return s.replace("==", "!=");
+        if (s.contains("!=")) return s.replace("!=", "==");
+        if (lower.contains(" is ") && !lower.contains("not ")) return s.replaceFirst(" is ", " is not ");
+        if (lower.contains(" has ") && !lower.contains("no ")) return s.replaceFirst(" has ", " has no ");
+        if (lower.contains(" contains ") && !lower.contains("does not contain")) return s.replaceFirst(" contains ", " does not contain ");
+        if (lower.contains(" starts with ") && !lower.contains("does not start with")) return s.replaceFirst(" starts with ", " does not start with ");
+        if (lower.contains(" present")) return s.replaceFirst(" present", " not present");
+        if (lower.contains(" enabled")) return s.replaceFirst(" enabled", " not enabled");
+        if (lower.contains(" includes ") && !lower.contains("does not include")) return s.replaceFirst(" includes ", " does not include ");
+        if (lower.matches(".*\\s(is|has)$")) return s + " not";
+        return "NOT(" + s + ")";
+    }
+    private boolean isPositiveOutcome(String nodeTitle) {
+        String lower = nodeTitle.toLowerCase();
+        if (lower.contains("fire bundle") || lower.contains("message_"))
+            return true;
+        if (lower.contains("alt outcome") || lower.contains("alternateoutcome")
+                || lower.contains("rule does not apply") || lower.contains("does not apply"))
+            return false;
+        return true;
+    }
+
+    public void writeToExcel(List<FlowPath> paths, String outputFile) throws IOException {
+        Workbook wb = new XSSFWorkbook();
+        Sheet sheet = wb.createSheet("FlowPaths");
+        // Styles as before...
+        CellStyle borderStyle = wb.createCellStyle();
+        borderStyle.setBorderTop(BorderStyle.THIN);
+        borderStyle.setBorderBottom(BorderStyle.THIN);
+        borderStyle.setBorderLeft(BorderStyle.THIN);
+        borderStyle.setBorderRight(BorderStyle.THIN);
+
+        CellStyle headerStyle = wb.createCellStyle();
+        Font headerFont = wb.createFont();
+        headerFont.setBold(true); headerStyle.setFont(headerFont);
+        headerStyle.cloneStyleFrom(borderStyle);
+        headerStyle.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex());
+        headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        CellStyle positiveStyle = wb.createCellStyle();
+        positiveStyle.cloneStyleFrom(borderStyle);
+        positiveStyle.setFillForegroundColor(IndexedColors.LIGHT_GREEN.getIndex());
+        positiveStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        CellStyle negatifiedStyle = wb.createCellStyle();
+        negatifiedStyle.cloneStyleFrom(borderStyle);
+        negatifiedStyle.setFillForegroundColor(IndexedColors.ROSE.getIndex());
+        negatifiedStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+
+        int maxSteps = paths.stream().mapToInt(p -> p.getSteps().size()).max().orElse(0);
+
+        Row headerRow = sheet.createRow(0);
+        int col = 0;
+        for (int i = 1; i <= maxSteps; i++) {
+            Cell cell = headerRow.createCell(col++);
+            cell.setCellValue("Step_" + i);
+            cell.setCellStyle(headerStyle);
+        }
+        Cell flowCell = headerRow.createCell(col++);
+        flowCell.setCellValue("FlowName");
+        flowCell.setCellStyle(headerStyle);
+        Cell outcomeCell = headerRow.createCell(col++);
+        outcomeCell.setCellValue("Outcome");
+        outcomeCell.setCellStyle(headerStyle);
+        Cell pathStrCell = headerRow.createCell(col++);
+        pathStrCell.setCellValue("Path_String");
+        pathStrCell.setCellStyle(headerStyle);
+        Cell genAtCell = headerRow.createCell(col++);
+        genAtCell.setCellValue("Generated_At");
+        genAtCell.setCellStyle(headerStyle);
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"));
+        int rowNum = 1;
+        for (FlowPath path : paths) {
+            Row row = sheet.createRow(rowNum++);
+            col = 0;
+            CellStyle rowStyle = path.isPositive() ? positiveStyle : borderStyle;
+            int negatedIdx = path.getNegatedIdx();
+            for (int i = 0; i < maxSteps; i++) {
+                Cell cell = row.createCell(col++);
+                String value = i < path.getSteps().size() ? path.getSteps().get(i) : "";
+                cell.setCellValue(value);
+                if (!path.isPositive() && negatedIdx == i)
+                    cell.setCellStyle(negatifiedStyle);
+                else
+                    cell.setCellStyle(rowStyle);
+            }
+            Cell flowc = row.createCell(col++);
+            flowc.setCellValue(path.getFlowName());
+            flowc.setCellStyle(rowStyle);
+            Cell oc = row.createCell(col++);
+            oc.setCellValue(path.getOutcome());
+            oc.setCellStyle(rowStyle);
+            Cell pc = row.createCell(col++);
+            pc.setCellValue(path.generatePathString());
+            pc.setCellStyle(rowStyle);
+            Cell gc = row.createCell(col++);
+            gc.setCellValue(timestamp);
+            gc.setCellStyle(rowStyle);
+        }
+        for (col = 0; col < maxSteps + 4; col++) sheet.autoSizeColumn(col);
+
+        // Add the Notes sheet with wrapped text for all content
+        writeNotesSheet(wb, paths);
+
+        try (FileOutputStream fos = new FileOutputStream(outputFile)) { wb.write(fos); }
+        wb.close();
+    }
+
+    // Notes sheet: B col width set, wrapText, plain note as detailed above
+    public void writeNotesSheet(Workbook wb, List<FlowPath> paths) {
+        Sheet notesSheet = wb.createSheet("Notes");
+        CellStyle hdr = wb.createCellStyle();
+        Font f = wb.createFont();
+        f.setBold(true); hdr.setFont(f);
+
+        Row header = notesSheet.createRow(0);
+        header.createCell(0).setCellValue("XmindFlow");
+        header.getCell(0).setCellStyle(hdr);
+        header.createCell(1).setCellValue("XmindNotes");
+        header.getCell(1).setCellStyle(hdr);
+        header.createCell(2).setCellValue("Path");
+        header.getCell(2).setCellStyle(hdr);
+
+        CellStyle wrapStyle = wb.createCellStyle();
+        wrapStyle.setWrapText(true);
+        wrapStyle.setVerticalAlignment(VerticalAlignment.TOP);
+
+        int rowIdx = 1;
+        for (FlowPath p : paths) {
+            if (p.isPositive() && p.getNotePlain() != null && !p.getNotePlain().isEmpty()) {
+                Row r = notesSheet.createRow(rowIdx++);
+                r.setHeightInPoints(12.5f);
+                r.createCell(0).setCellValue(p.getFlowName());
+                Cell noteCell = r.createCell(1);
+                // Any \n will appear as line breaks in Excel with wrapText set!
+                noteCell.setCellValue(p.getNotePlain());
+                noteCell.setCellStyle(wrapStyle);
+                r.createCell(2).setCellValue(p.generatePathString());
+            }
+        }
+        // B column to 56.89 width, others auto
+        notesSheet.setColumnWidth(1, (int) (56.89 * 256));
+        notesSheet.autoSizeColumn(0);
+        notesSheet.autoSizeColumn(2);
+    }
+
+    public void printSummary(List<FlowPath> paths) {
+        long positive = paths.stream().filter(FlowPath::isPositive).count();
+        long negative = paths.size() - positive;
+        System.out.println("\n📊 Extract Summary:");
+        System.out.println("Total Paths: " + paths.size());
+        System.out.println("Positive: " + positive + ", Negative: " + negative);
+        System.out.println("Sample Paths:");
+        paths.stream().limit(5).forEach(path -> {
+            String preview = String.join(" → ", path.getSteps().subList(0, Math.min(3, path.getSteps().size())));
+            if (path.getSteps().size() > 3) preview += " → ...";
+            System.out.println("  " + preview + " [Outcome: " + path.getOutcome() +
+                    ", Path: " + path.generatePathString() + ", Flow: " + path.getFlowName() + "]");
+        });
+    }
+}
