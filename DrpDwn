@@ -1,0 +1,39 @@
+async function extractDropdownCombinations() {
+    // Adjust the selectors below as needed
+    const dropdown1 = document.querySelector('#dropdown1');
+    const dropdown2 = document.querySelector('#dropdown2');
+    const dropdown3 = document.querySelector('#dropdown3');
+
+    if (!dropdown1 || !dropdown2 || !dropdown3) {
+        alert("One or more dropdowns not found! Check the IDs in the script.");
+        return;
+    }
+
+    const result = [];
+    result.push(["Dropdown1", "Dropdown2", "Dropdown3"]); // Header row
+
+    // Helper function to pause
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    for (const opt1 of dropdown1.options) {
+        dropdown1.value = opt1.value;
+        dropdown1.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Wait for possible dynamic update (adjust if needed)
+        await sleep(500);
+
+        const selected2 = dropdown2.options[dropdown2.selectedIndex]?.text || '';
+        const selected3 = dropdown3.options[dropdown3.selectedIndex]?.text || '';
+
+        result.push([opt1.text, selected2, selected3]);
+    }
+
+    // Print CSV for Excel
+    for (let row of result) {
+        console.log(row.join(','));
+    }
+}
+
+extractDropdownCombinations();
