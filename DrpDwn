@@ -1,39 +1,34 @@
-async function extractDropdownCombinations() {
-    // Adjust the selectors below as needed
-    const dropdown1 = document.querySelector('#dropdown1');
-    const dropdown2 = document.querySelector('#dropdown2');
-    const dropdown3 = document.querySelector('#dropdown3');
-
-    if (!dropdown1 || !dropdown2 || !dropdown3) {
-        alert("One or more dropdowns not found! Check the IDs in the script.");
-        return;
+async function extractRadComboBoxValues() {
+    // Update these selectors with your actual IDs or relevant classes for other dropdowns
+    function getDisplayedValue(containerId) {
+        const container = document.querySelector('#' + containerId);
+        if (!container) return '';
+        const input = container.querySelector('.rcbInput');
+        return input ? input.value : '';
     }
 
-    const result = [];
-    result.push(["Dropdown1", "Dropdown2", "Dropdown3"]); // Header row
+    // List the container IDs of your three dropdowns (update as needed)
+    const dropdownIds = [
+        'PROVCnt_radlicType', // The first dropdown as in your screenshot
+        'SECOND_DROPDOWN_ID', // Update with actual container ID
+        'THIRD_DROPDOWN_ID'   // Update with actual container ID
+    ];
 
-    // Helper function to pause
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
+    // If you have a way to select options programmatically, add below logic.
+    // For demonstration, we'll just get currently displayed values:
+    let result = [];
+    result.push(['Dropdown1', 'Dropdown2', 'Dropdown3']);
 
-    for (const opt1 of dropdown1.options) {
-        dropdown1.value = opt1.value;
-        dropdown1.dispatchEvent(new Event('change', { bubbles: true }));
+    // If you want to loop over all values, you'll need to simulate clicks and reads.
+    // For now, we show current values:
+    const row = dropdownIds.map(id => getDisplayedValue(id));
+    result.push(row);
 
-        // Wait for possible dynamic update (adjust if needed)
-        await sleep(500);
+    // Output CSV for Excel
+    result.forEach(r => console.log(r.join(',')));
 
-        const selected2 = dropdown2.options[dropdown2.selectedIndex]?.text || '';
-        const selected3 = dropdown3.options[dropdown3.selectedIndex]?.text || '';
-
-        result.push([opt1.text, selected2, selected3]);
-    }
-
-    // Print CSV for Excel
-    for (let row of result) {
-        console.log(row.join(','));
-    }
+    // BONUS: If you want to loop all available options for the first dropdown,
+    // Find option elements (usually in a dropdown popup that opens on click).
+    // More advanced automation available if needed.
 }
-
-extractDropdownCombinations();
+extractRadComboBoxValues();
