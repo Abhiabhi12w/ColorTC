@@ -1,0 +1,85 @@
+async function extractDropdownData() {
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
+    
+    console.log('Starting extraction...');
+    
+    // Find the first dropdown input
+    const firstInput = document.querySelector('input.rcbInput[id*="radlicType"]');
+    if (!firstInput) {
+        console.log('❌ Could not find first dropdown');
+        return;
+    }
+    console.log('✅ Found first dropdown');
+    
+    // Helper to open dropdown
+    function openDropdown(input) {
+        const container = input.closest('.RadComboBox');
+        const arrow = container?.querySelector('.rcbArrowCell');
+        if (arrow) arrow.click();
+        return !!arrow;
+    }
+    
+    // Helper to get dropdown options
+    function getDropdownOptions() {
+        const ul = document.querySelector('ul.rcbList');
+        if (!ul) return [];
+        return Array.from(ul.querySelectorAll('li')).map(li => li.textContent.trim());
+    }
+    
+    // Step 1: Get all options from first dropdown
+    console.log('Opening first dropdown...');
+    openDropdown(firstInput);
+    await sleep(1000);
+    
+    const allOptions = getDropdownOptions();
+    console.log(`Found ${allOptions.length} options in first dropdown:`, allOptions);
+    
+    if (allOptions.length === 0) {
+        console.log('❌ No options found. Please check if dropdown opened properly.');
+        return;
+    }
+    
+    let results = [];
+    results.push(['First Dropdown', 'Second Dropdown Options', 'Third Dropdown Options']);
+    
+    // Step 2: Process each option (limit to first 3 for testing)
+    const testOptions = allOptions.slice(0, 3); // Test with first 3 only
+    
+    for (let i = 0; i < testOptions.length; i++) {
+        console.log(`\nProcessing option ${i + 1}: ${testOptions[i]}`);
+        
+        // Open first dropdown and click option
+        openDropdown(firstInput);
+        await sleep(500);
+        
+        const ul = document.querySelector('ul.rcbList');
+        const options = ul?.querySelectorAll('li');
+        if (options && options[i]) {
+            options[i].click();
+            console.log(`✅ Selected: ${testOptions[i]}`);
+            await sleep(1500); // Wait for other dropdowns to update
+            
+            // Try to get second dropdown options
+            const secondInput = document.querySelector('input.rcbInput[id*="radSpecialty"]');
+            let secondOptions = 'Not found';
+            if (secondInput) {
+                openDropdown(secondInput);
+                await sleep(500);
+                const opts = getDropdownOptions();
+                secondOptions = opts.join(' | ');
+                console.log(`Second dropdown options: ${opts.length} found`);
+            }
+            
+            results.push([testOptions[i], secondOptions, 'Third dropdown - update selector']);
+        }
+    }
+    
+    // Output results
+    console.log('\n=== RESULTS FOR EXCEL ===');
+    results.forEach(row => console.log(row.join('\t')));
+    console.log('=== END ===');
+}
+
+// Clear console and run
+console.clear();
+extractDropdownData();
