@@ -1,34 +1,75 @@
-async function extractRadComboBoxValues() {
-    // Update these selectors with your actual IDs or relevant classes for other dropdowns
-    function getDisplayedValue(containerId) {
-        const container = document.querySelector('#' + containerId);
-        if (!container) return '';
-        const input = container.querySelector('.rcbInput');
-        return input ? input.value : '';
+async function extractDropdownMatrix() {
+    // ==== STEP 1: Replace these with your dropdown UL IDs ====
+    const firstUlId  = 'PROVCnt_radlicType_DropDown_Outlook';   // FIRST dropdown (license type)
+    const secondUlId = 'PROVCnt_radSpecialty_DropDown_Outlook'; // SECOND dropdown (example)
+    const thirdUlId  = 'THIRD_DROPDOWN_UL_ID';                  // THIRD dropdown (**replace!**)
+    // =========================================================
+
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+    // Helper: open dropdown by simulating click on its arrow button.
+    function openDropdownByInputId(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        // Find the arrow next to the input and click it:
+        const box = input.closest('.RadComboBox');
+        if (!box) return;
+        const arrow = box.querySelector('.rcbArrowCell, .rcbArrow');
+        if (arrow) arrow.click();
     }
 
-    // List the container IDs of your three dropdowns (update as needed)
-    const dropdownIds = [
-        'PROVCnt_radlicType', // The first dropdown as in your screenshot
-        'SECOND_DROPDOWN_ID', // Update with actual container ID
-        'THIRD_DROPDOWN_ID'   // Update with actual container ID
-    ];
+    // Helper: safely select <li> by index
+    function selectDropdownLi(ulId, idx) {
+        const ul = document.getElementById(ulId);
+        if (!ul) return null;
+        const lis = ul.querySelectorAll('li.rcbItem, li.rcbHovered');
+        if (!lis[idx]) return null;
+        lis[idx].click();
+        return lis[idx].textContent.trim();
+    }
 
-    // If you have a way to select options programmatically, add below logic.
-    // For demonstration, we'll just get currently displayed values:
-    let result = [];
-    result.push(['Dropdown1', 'Dropdown2', 'Dropdown3']);
+    // Helper: extract all option texts for given dropdown
+    function getOptions(ulId) {
+        const ul = document.getElementById(ulId);
+        if (!ul) return [];
+        return Array.from(ul.querySelectorAll('li.rcbItem, li.rcbHovered'))
+            .map(li => li.textContent.trim()).filter(Boolean);
+    }
 
-    // If you want to loop over all values, you'll need to simulate clicks and reads.
-    // For now, we show current values:
-    const row = dropdownIds.map(id => getDisplayedValue(id));
-    result.push(row);
+    // === MAIN SCRIPT ===
 
-    // Output CSV for Excel
-    result.forEach(r => console.log(r.join(',')));
+    // First, open the FIRST dropdown and get all options
+    const ul = document.getElementById(firstUlId);
+    if (!ul) {
+        alert('Cannot find first dropdown ul!');
+        return;
+    }
+    openDropdownByInputId(ul.previousElementSibling.id); // Try opening the first dropdown in case it needs to be open
 
-    // BONUS: If you want to loop all available options for the first dropdown,
-    // Find option elements (usually in a dropdown popup that opens on click).
-    // More advanced automation available if needed.
+    const all1 = Array.from(ul.querySelectorAll('li.rcbItem, li.rcbHovered'));
+    let table = [];
+    table.push(['FirstDropdown', 'SecondDropdownOptions', 'ThirdDropdownOptions']);
+
+    for (let i = 0; i < all1.length; ++i) {
+        // Open and select ith option in the first dropdown
+        openDropdownByInputId(ul.previousElementSibling.id);
+        await sleep(100); // Small pause
+        const value1 = selectDropdownLi(firstUlId, i);
+        await sleep(800); // Wait for dependencies to update (may need to increase if site is slow!)
+
+        // Open and grab options from second/third dropdowns
+        openDropdownByInputId('SECOND_INPUT_ID'); // Replace with second dropdown's <input> id (not ul id)
+        await sleep(200);
+        let opts2 = getOptions(secondUlId);
+
+        openDropdownByInputId('THIRD_INPUT_ID'); // Replace with third dropdown's <input> id
+        await sleep(200);
+        let opts3 = getOptions(thirdUlId);
+
+        table.push([value1, opts2.join(' | '), opts3.join(' | ')]);
+    }
+
+    // Output CSV!
+    console.log(table.map(row => row.join('\t')).join('\n'));
 }
-extractRadComboBoxValues();
+extractDropdownMatrix();
