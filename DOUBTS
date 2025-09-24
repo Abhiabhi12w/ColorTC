@@ -1,0 +1,49 @@
+Recalc Process End: processflag: 0
+Using patient claim level allocations with pip=100, medpay=0, copay=0
+Using patient claim level allocations with pip=100, medpay=0, copay=0
+Flag for Bill EOB:  Initial EOR generated for doc id.
+End EOB_DME_CAP : No line found with CPT in code group with reimbursement greater then 0
+Start EOB_DME_CAP calculation
+End MPR
+Calculating MPR For DOS 10/15/2024 12:00:00 AM and Modofier ALL
+Calculating MPR For DOS 10/14/2024 12:00:00 AM and Modofier ALL
+Start MPR Indicator 4
+No Line found with MPR Indicator 3
+No Line found with MPR Indicator 2
+No Line found with MPR Indicator 5
+No Line found with MPR Indicator 5
+No Line found in code group 10000-69999
+End Bilateral
+Start Bilateral  for Indicator 0 
+End Bilateral 3 : No line found with CPT in code group with reimbursement  greater then 0
+Start Bilateral  for Indicator 3 
+End Bilateral 1 : No line found with CPT in code group with reimbursement  greater then 0
+Start Bilateral  for Indicator 1 
+End Bilateral 2 : No line found with CPT in code group with reimbursement  greater then 0
+Start Bilateral  for Indicator 2 
+End EOB_COMP_PHAR calculation
+Start EOB_COMP_PHAR calculation
+End FUD G_FUD_EVAL : No line found with CPT in code group with reimbursement  greater then 0
+Start FUD
+EOB_FireNCCIEdits----Done
+EOB_FireNCCIEdits----Practitioner Edits applied
+EOB_FireNCCIEdits----Start
+Line # 2 : Reimbursing $112.93. RulesID 132.; Fee schedule amount of $112.93  
+Flag for line 2:  POS is blank. Please update.
+Line # 1 : Reimbursing $112.93. RulesID 132.; Fee schedule amount of $112.93  
+Flag for line 1:  POS is blank. Please update.
+Recalc Process Start:
+Batch Calculation Process started
+FPM edits are done
+Flag for Bill Header BH:  ATLAS (Non-Legacy) claims
+FPM edits started
+FPM edits are done
+Flag for Bill Header BH:  ATLAS (Non-Legacy) claims
+FPM edits started
+Using patient claim level allocations with pip=100, medpay=0, copay=0
+2 lines added in Data Capture.
+DC Line #:1,CPT:70450,DOS:10/14/2024,Charge:1000
+DC Line #:2,CPT:70450,DOS:10/15/2024,Charge:1000
+SPTin:02-0759373,SPZip:16701,SPState:PA, SPCity:Bradford,License:MD,Specialty:Radiology,BillType:Medical,TreatmentZip:16701
+BPTin:02-0759373,BPZip:16701,BPState:PA, BPCity:Bradford
+
